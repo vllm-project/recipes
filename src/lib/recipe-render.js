@@ -23,6 +23,7 @@ import {
   resolveModeKey,
   resolveFrontend,
   resolveInstall,
+  nvidiaNightlyPipInstall,
   maxVersion,
   isFeatureAllowedForVariant,
   resolveOmniCommand,
@@ -81,7 +82,7 @@ export function resolveDockerImage(recipe, baseCuda) {
 
 // Synthesize the canonical NVIDIA install commands (pip + docker) for a recipe
 // so JSON consumers see the same one-liners the site shows. Mirrors the logic
-// in InstallBlock; defaults to NVIDIA + cu130 (today's upstream baseline).
+// in InstallBlock for NVIDIA, with cu130 as the base Docker tag.
 // Per-recipe overrides at `model.install` follow the same semantics as the UI:
 //   pip: false              → omit the `pip` key
 //   pip: { command?, note?} → use overrides; missing fields fall back to defaults
@@ -99,14 +100,10 @@ export function synthesizeInstall(recipe, variant = {}, dockerMeta) {
   const out = {};
 
   if (pipCfg !== false) {
-    const defaultPipCmd = nightlyRequired
-      ? `uv venv\nsource .venv/bin/activate\nuv pip install -U vllm --pre \\\n  --extra-index-url https://wheels.vllm.ai/nightly/${baseCuda} \\\n  --extra-index-url https://download.pytorch.org/whl/${baseCuda} \\\n  --index-strategy unsafe-best-match`
-      : `uv venv\nsource .venv/bin/activate\nuv pip install -U vllm --torch-backend auto`;
-    const defaultPipNote = nightlyRequired
-      ? `vLLM ${v} isn't released yet — nightly required. Nightly wheels are CUDA 13 (cu130) only; the host needs an r580+ NVIDIA driver.`
-      : undefined;
+    const nightlyPip = nightlyRequired ? nvidiaNightlyPipInstall(v) : null;
+    const defaultPipCmd = nightlyPip?.command ?? `uv venv\nsource .venv/bin/activate\nuv pip install -U vllm --torch-backend auto`;
     const command = (pipCfg && pipCfg.command) || defaultPipCmd;
-    const note = (pipCfg && pipCfg.note) || defaultPipNote;
+    const note = (pipCfg && pipCfg.note) || nightlyPip?.note;
     out.pip = note ? { command, note } : { command };
   }
 
