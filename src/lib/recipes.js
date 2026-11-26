@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import yaml from "js-yaml";
-import { contentDir, loadProvenance } from "./content-root.js";
+import { attachPoolProfiles, contentDir, loadPoolProfiles, loadProvenance } from "./content-root.js";
 
 let cache = null;
 
@@ -22,7 +22,7 @@ function loadHfDates() {
   return hfDates;
 }
 
-function parseRecipe(filePath, dir, provenance) {
+function parseRecipe(filePath, dir, provenance, poolProfiles) {
   const raw = yaml.load(fs.readFileSync(filePath, "utf8"));
   // js-yaml auto-parses YYYY-MM-DD into Date objects — normalize to string
   for (const field of ["date_added", "date_updated"]) {
@@ -43,7 +43,7 @@ function parseRecipe(filePath, dir, provenance) {
     // Owning repo + overlays (from .content/<channel>/provenance.json)
     raw.source = provenance[raw.hf_id] || null;
   }
-  return raw;
+  return attachPoolProfiles(raw, poolProfiles);
 }
 
 // Skips dangling symlinks (a source checkout renamed or deleted a recipe) and
@@ -81,9 +81,10 @@ export function getAllRecipes() {
     : null;
   if (cache && key === cacheKey) return cache;
   const provenance = loadProvenance();
+  const profiles = loadPoolProfiles();
   cacheKey = key;
   cache = files
-    .map((f) => parseRecipe(f, dir, provenance))
+    .map((f) => parseRecipe(f, dir, provenance, profiles))
     .sort((a, b) => {
       const da = new Date(a.meta.date_updated);
       const db = new Date(b.meta.date_updated);

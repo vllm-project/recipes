@@ -633,6 +633,45 @@ Every PD JSON role includes `node_commands[]` for all of its nodes, with
 same complete commands. The singular role command still follows the selected
 node; it is not a command to repeat unchanged on every node.
 
+### Source-owned KV pool deployments
+
+A source with `extra_artifacts: [pool_profiles]` in `sources.yaml` can provide
+`pool_profiles/<id>.yaml`. Its non-default model preset selects the fully
+qualified ID, for example `select.kv_offload: vllm-ascend/memcache`. Set the
+exact hardware, variants, image, PD router and transfer connector on that
+preset. Source assembly checks ownership, hardware scope and references before
+publishing. The pool template and the model use the same source revision.
+The generated `/pool-profile.schema.json` describes the backend format.
+
+| Where | Fields and behavior |
+| --- | --- |
+| Pool profile | `schema_version: 1`, `label`, `backend`, scoped `inputs`, optional `mounts`, `devices` and `capacity`, role-specific `store.prefill` / `store.decode` extra config, and ordered `steps`. Mounts bind a host source to a container target, while devices pass a block device to Docker. |
+| Preset `deployment` | `hosts` identifies physical hosts. Each `containers` entry specifies its host and optional Docker arguments. `placements` associates a role and container with a launcher, NPU device list and optional rank. Multiple ranks may share a container. `ascend_version` and `tutorial` identify the runtime and evidence. The deployment can extend inputs, bindings and steps, and supply per-host defaults. |
+| Launch | Supply `launch.argv`, `env` and any shell `setup` for that placement. For P/D include the direct `transfer` configuration and any model-specific store overrides. Recipes emits one `--kv-transfer-config` with the direct connector first, then AscendStoreConnector, using the role of this process on both children. A proxy placement supplies its endpoint arguments. |
+| Step | Set a unique `id`, `stage`, `title`, `target`, observable `check`, and optionally `depends_on`, `mode`, and either a shell `command` or a generated `action` (`container` or `launch`). Targets include `hosts`, `containers`, role groups, `control`, `host:<id>` and `placement:<id>`. Steps are expanded and sorted by stage and dependencies. |
+
+Inputs are scoped to the cluster or a host. Use `{{name}}` for the local field,
+`{{hosts.d1.address}}` for a specific host, and `{{placement.rank}}` or a
+placement variable for rank-specific values. Store fixed values shared by
+configuration and serving processes in `deployment.constants`, for example the
+names of the Prefill and Decode INI files. They use the same `{{name}}`
+syntax and stay outside the site input form. Put references in shell commands
+as **unquoted words**: the renderer quotes site values. In argv and structured
+connector objects, use the raw reference. Values such as paths with spaces
+remain single arguments. Use separate host and container path fields when a
+mapping can change. Capacity rows specify a per-instance value or numeric
+input, a unit, and a count from mapped worker devices or a named input.
+
+The **Deployment** tab presents the physical layout and the selected flow.
+`pool_mode=new` prepares a pool and `pool_mode=reuse` connects to an existing
+one. Before a mode is chosen the export is a template with both branches.
+Page URLs and their Markdown/JSON routes share the public selections. IPs,
+interfaces, paths and block devices stay in the browser session. Local Copy
+page and JSON exports contain the current site values. Public exports retain
+placeholders. A host filter limits the visible steps or an explicit host copy.
+The full export preserves all hosts and their prerequisites. Inspect the
+`pool_deployment.launches` list for every rank's actual argv and environment.
+
 ### Router ports in PD presets
 
 Set `router_port` on a `pd_cluster` preset to choose its client-facing port

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import yaml from "js-yaml";
 import Ajv from "ajv";
 import { buildRecipeSchema } from "../src/lib/recipe-schema.js";
-import { contentDir } from "../src/lib/content-root.js";
+import { contentDir, loadPoolProfiles } from "../src/lib/content-root.js";
 
 // Reads the assembled tree (every source): run build-recipes-api first.
 const dir = contentDir();
@@ -18,7 +18,9 @@ const strategies = Object.fromEntries(
     .filter((f) => f.endsWith(".yaml"))
     .map((f) => { const s = load(path.join(dir, d, f)); return [s.name, s]; })),
 );
-const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({ taxonomy, strategies }));
+const validate = new Ajv({ allErrors: true, strict: false }).compile(buildRecipeSchema({
+  taxonomy, strategies, poolProfileIds: Object.keys(loadPoolProfiles(dir)),
+}));
 
 // js-yaml parses YYYY-MM-DD as Date; the build normalizes the same way.
 const normalize = (v) => (v instanceof Date ? v.toISOString().slice(0, 10)

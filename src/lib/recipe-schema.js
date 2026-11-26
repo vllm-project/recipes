@@ -32,7 +32,67 @@ function keyed(keys, value, description) {
   return { type: "object", ...(description ? { description } : {}), propertyNames: keys, additionalProperties: value };
 }
 
-export function buildRecipeSchema({ taxonomy, strategies }) {
+// Physical placements are distinct from logical PD pools: several ranks can
+// share a container, and one distributed service can span multiple hosts.
+const poolString = { type: "string", minLength: 1 };
+const poolName = { type: "string", pattern: "^[a-zA-Z][a-zA-Z0-9_-]*$" };
+const poolMode = { enum: ["new", "reuse"] };
+
+function poolTemplateFields() {
+  const str = poolString, name = poolName, mode = poolMode;
+  const input = obj({
+    scope: { enum: ["cluster", "host"] },
+    type: { enum: ["host", "port", "path", "device", "interface", "integer", "text", "size", "boolean", "id"] },
+    label: str, default: envValue, mode,
+  }, { required: ["scope", "type", "label"] });
+  const step = obj({
+    id: name, title: str, stage: { enum: ["storage", "container", "config", "control", "verify", "serve"] },
+    target: str, mode, command: str, check: str, depends_on: strings,
+    action: { enum: ["container", "launch"] },
+  }, { required: ["id", "title", "stage", "target", "check"] });
+  const mount = obj({ source: str, target: str, read_only: { type: "boolean" } }, { required: ["source", "target"] });
+  const device = obj({ source: str, target: str }, { required: ["source"] });
+  return {
+    inputs: keyed(name, input), steps: { type: "array", items: step },
+    mounts: { type: "array", items: mount }, devices: { type: "array", items: device },
+  };
+}
+
+export function buildPoolProfileSchema() {
+  const storeConfig = { type: "object", required: ["backend"], properties: { backend: poolName } };
+  const budget = obj({
+    label: poolString, input: poolName, value: { type: "integer", minimum: 0 }, unit: poolString, count: poolName,
+  }, { required: ["label", "unit", "count"] });
+  return obj({
+    schema_version: { const: 1 }, label: poolString, backend: poolName,
+    ...poolTemplateFields(),
+    store: obj({ prefill: storeConfig, decode: storeConfig }, { required: ["prefill", "decode"] }),
+    capacity: { type: "array", items: { ...budget, oneOf: [{ required: ["input"] }, { required: ["value"] }] } },
+  }, { required: ["schema_version", "label", "backend", "inputs", "steps", "store"] });
+}
+
+function poolDeploymentSchema() {
+  const str = poolString, name = poolName, mode = poolMode;
+  const devices = { type: "array", uniqueItems: true, items: { type: "integer", minimum: 0 } };
+  const config = { type: "object" };
+  const launch = obj({
+    argv: { ...strings, minItems: 1 }, env: envMap, setup: str, transfer: config, store: config,
+  }, { required: ["argv"] });
+  const placement = obj({
+    id: name, container: name, mode, devices, rank: { type: "integer", minimum: 0 },
+    role: { enum: ["prefill", "decode", "proxy", "master", "meta"] },
+    launch, transfer: config, store: config, vars: envMap,
+  }, { required: ["role", "container"] });
+  return obj({
+    hosts: { type: "array", items: name, minItems: 1, uniqueItems: true },
+    containers: keyed(name, obj({ host: name, docker_args: strings }, { required: ["host"] })),
+    placements: { type: "array", minItems: 1, items: placement },
+    defaults: { type: "object", additionalProperties: envValue }, constants: keyed(name, envValue), ...poolTemplateFields(),
+    ascend_version: str, tutorial: str,
+  }, { required: ["hosts", "containers", "placements", "ascend_version", "tutorial"] });
+}
+
+export function buildRecipeSchema({ taxonomy, strategies, poolProfileIds = [] }) {
   const profiles = taxonomy?.hardware_profiles || {};
   const profileIds = Object.keys(profiles);
   const generations = [...new Set(Object.values(profiles).map((p) => p.generation).filter(Boolean))];
@@ -292,7 +352,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           frontend: { enum: frontends },
           features: keyed({ type: "string" }, { anyOf: [{ type: "boolean" }, { type: "string" }] }, "true/false toggles a feature; a string picks that mode (and turns it on)"),
           dcp: { type: "integer", minimum: 1 },
-          kv_offload: { enum: [...kvOffload, ...kvStores, "off", false] },
+          kv_offload: { enum: [...kvOffload, ...kvStores, ...poolProfileIds, "off", false] },
         });
         const image = { anyOf: [
           { type: "string" },
@@ -316,6 +376,7 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           label: { type: "string" },
           hardware: gpuId,
           strategy: strategyId,
+          deployment: poolDeploymentSchema(),
           router_port: routerPort,
           variants: { type: "array", minItems: 1, items: { type: "string" } },
           workload: { type: "string" },

@@ -3,6 +3,7 @@
  * site loaders and build-recipes-api read (same layout the repo root had):
  *
  *   models/<org>/<repo>.yaml   recipes from core/owner sources, overlays merged
+ *   pool_profiles.json         pinned, source-qualified deployment templates
  *   taxonomy.yaml, platforms.yaml, strategies/, kv_store/, quickstart/
  *                              renderer-owned vocabulary (this repo)
  *   provenance.json            hf_id → source repo/sha/path (+ overlays)
@@ -12,7 +13,7 @@
  *
  *   node scripts/assemble-content.mjs [--channel <name> | --all] [--strict] [--override name=dir] [--watch]
  *
- * --watch re-assembles whenever a local source's models/ or overlays/ changes
+ * --watch re-assembles whenever local model, overlay or pool profile YAML changes
  * (for previewing a checkout alongside `pnpm dev`).
  *
  * --strict also fails on overlays whose target recipe doesn't exist (CI for
@@ -23,13 +24,18 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import yaml from "js-yaml";
+import Ajv from "ajv";
 import { applyOverlay, hasGuideMarkers, resolveScope, splitOverlay, stripGuideMarkers, variantInScope } from "../src/lib/overlay-merge.js";
+import { validatePoolProfile } from "../src/lib/pool-deployment.js";
+import { poolProfileRefs } from "../src/lib/pool-profile-refs.js";
+import { buildPoolProfileSchema } from "../src/lib/recipe-schema.js";
 import { ROOT, defersTo, loadLock, loadOverrides, loadSources, parseArgs, resolveSourceDir } from "./lib/content-sources.mjs";
 
 // Highest recipe schema this renderer understands (source manifest.yaml).
 export const SUPPORTED_SCHEMA_VERSION = 1;
 
 const VOCABULARY = ["taxonomy.yaml", "platforms.yaml", "strategies", "kv_store", "quickstart"];
+const poolSchema = new Ajv({ allErrors: true, strict: false }).compile(buildPoolProfileSchema());
 
 function findYamlFiles(dir) {
   if (!fs.existsSync(dir)) return [];
@@ -82,6 +88,54 @@ function readManifest(dir, label) {
   return m;
 }
 
+function collectPoolProfiles({ dir, name, spec, label, sha }, profiles, errors) {
+  if (!spec.extra_artifacts?.includes("pool_profiles")) return;
+  const profileDir = path.join(dir, "pool_profiles");
+  for (const file of findYamlFiles(profileDir)) {
+    const relative = path.relative(dir, file).split(path.sep).join("/");
+    const filename = path.relative(profileDir, file);
+    if (!/^[a-z0-9][a-z0-9_-]*\.ya?ml$/.test(filename)) {
+      errors.push(`${label} ${relative}: expected pool_profiles/<id>.yaml`);
+      continue;
+    }
+    const id = `${name}/${filename.replace(/\.ya?ml$/, "")}`;
+    if (Object.hasOwn(profiles, id)) {
+      errors.push(`${label} ${relative}: duplicate pool profile ${id}`);
+      continue;
+    }
+    const profile = loadYaml(file, label, relative, errors);
+    if (profile === undefined) continue;
+    if (!poolSchema(profile)) {
+      for (const issue of poolSchema.errors) {
+        const field = issue.params.additionalProperty || issue.params.missingProperty || "";
+        errors.push(`${label} ${relative}${issue.instancePath}: ${issue.message} ${field}`.trimEnd());
+      }
+      continue;
+    }
+    const problems = validatePoolProfile(profile);
+    if (problems.length) {
+      for (const problem of problems) errors.push(`${label} ${relative}: ${problem}`);
+      continue;
+    }
+    profiles[id] = { ...profile, source: {
+      source: name, repo: spec.repo || null, ref: spec.ref || null, sha,
+      path: path.posix.join(spec.path || ".", relative), edit_url: editUrl(spec, relative),
+    } };
+  }
+}
+
+function checkProfileSource(doc, name, label, rel, ctx, profiles, errors) {
+  const used = {};
+  for (const { id, hardware, where } of poolProfileRefs(doc)) {
+    const at = `${label} ${rel} ${where}`;
+    if (id.split("/")[0] !== name) errors.push(`${at}: pool profile ${id} belongs to another source`);
+    else if (!Object.hasOwn(profiles, id)) errors.push(`${at}: missing pool profile ${id} in this source`);
+    else if (!ctx.isHwKey(hardware)) errors.push(`${at}: hardware ${hardware} is outside the source's granted scope`);
+    else used[id] = profiles[id].source;
+  }
+  return used;
+}
+
 // Symlink locally (live edits); copy on CI/Vercel so the tree is
 // self-contained for Next's output file tracing.
 const COPY = !!(process.env.CI || process.env.VERCEL);
@@ -109,6 +163,7 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
   const owners = new Map(); // hf_id → { name, spec, file, rel, sha }
   const overlays = new Map(); // hf_id → [{ name, spec, file, rel, sha, ctx }]
   const sourceInfo = {};
+  const poolProfiles = {};
   const localDirs = [];
   let deferred = 0;
   // A source that defers goes after the others, so the copies it skips are
@@ -122,6 +177,7 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
     sourceInfo[name] = { repo: spec.repo || null, ref: spec.ref || null, sha, path: spec.path || ".", role: spec.role, local };
     const ctx = resolveScope(spec.scope, taxonomy);
     const excluded = spec.scope?.exclude_brands ? resolveScope({ brands: spec.scope.exclude_brands }, taxonomy) : null;
+    collectPoolProfiles({ dir, name, spec, label, sha }, poolProfiles, errors);
 
     const modelsDir = path.join(dir, "models");
     for (const file of findYamlFiles(modelsDir)) {
@@ -140,6 +196,7 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
       const parsed = loadYaml(file, label, rel, errors);
       if (parsed === undefined) continue;
       const doc = parsed && typeof parsed === "object" ? parsed : {};
+      const profileSources = checkProfileSource(doc, name, label, rel, ctx, poolProfiles, errors);
       const meta = doc.meta || {};
       const tasks = Array.isArray(meta.tasks) ? meta.tasks : [];
       if (spec.scope?.tasks && !spec.scope.tasks.some((t) => tasks.includes(t))) {
@@ -169,7 +226,7 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
           errors.push(`${label} ${rel}: an overlay source may only own recipes whose meta.hardware and every variant's supported_hardware are in scope`);
         }
       }
-      owners.set(hfId, { name, spec, file, rel, sha });
+      owners.set(hfId, { name, spec, file, rel, sha, profileSources });
     }
 
     const overlaysDir = path.join(dir, "overlays");
@@ -209,6 +266,7 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
       sha: owner.sha,
       path: path.posix.join(owner.spec.path || ".", owner.rel.split(path.sep).join("/")),
       edit_url: editUrl(owner.spec, owner.rel),
+      ...(Object.keys(owner.profileSources).length ? { pool_profiles: owner.profileSources } : {}),
       overlays: ovs.map((o) => ({
         source: o.name,
         repo: o.spec.repo || null,
@@ -231,6 +289,8 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
     for (const o of ovs) {
       const ov = loadYaml(o.file, `${channel}.${o.name}`, o.rel, errors);
       if (ov === undefined) continue;
+      const used = checkProfileSource(ov, o.name, `${channel}.${o.name}`, o.rel, o.ctx, poolProfiles, errors);
+      if (Object.keys(used).length) Object.assign(provenance[hfId].pool_profiles ??= {}, used);
       const res = applyOverlay(recipe, ov || {}, { ctx: o.ctx, source: o.name });
       for (const e of res.errors) errors.push(`${channel}.${o.name} ${o.rel}: ${e}`);
       recipe = res.recipe;
@@ -252,9 +312,11 @@ export function assembleChannel(channel, { strict = false, overrides = {}, quiet
     }
   }
 
+  const poolSources = Object.fromEntries(Object.entries(poolProfiles).map(([id, profile]) => [id, profile.source]));
+  fs.writeFileSync(path.join(tmp, "pool_profiles.json"), JSON.stringify(poolProfiles, null, 2) + "\n");
   fs.writeFileSync(
     path.join(tmp, "provenance.json"),
-    JSON.stringify({ channel, sources: sourceInfo, recipes: provenance }, null, 2) + "\n",
+    JSON.stringify({ channel, sources: sourceInfo, recipes: provenance, pool_profiles: poolSources }, null, 2) + "\n",
   );
 
   for (const w of warnings) console.warn(`  ⚠ ${w}`);
@@ -298,7 +360,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
         try { run(); } catch (e) { console.error(e.message); }
       }, 200);
     };
-    const watched = [...new Set(dirs)].flatMap((d) => ["models", "overlays"].map((s) => path.join(d, s)))
+    const watched = [...new Set(dirs)].flatMap((d) => ["models", "overlays", "pool_profiles"].map((s) => path.join(d, s)))
       .filter((d) => fs.existsSync(d));
     for (const d of watched) fs.watch(d, { recursive: true }, rerun);
     console.log(`  watching ${watched.map((d) => path.relative(ROOT, d) || ".").join(", ")}`);

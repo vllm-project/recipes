@@ -50,7 +50,18 @@
 // preset therefore renders exactly as before, and Baseline drops the lane's
 // topology together with its flags.
 
+import { validatePoolDeployment } from "./pool-deployment.js";
+
 export const BASELINE = "baseline";
+// Only an explicitly requested, assembled pool preset grants PD on a profile
+// whose ordinary PD strategy is unavailable.
+export function qualifiedPoolPreset(recipe, key, hwId, variantKey, pointKey) {
+  const preset = recipe?.presets?.[key];
+  if (preset?.strategy !== "pd_cluster" || preset.default || preset.hardware !== hwId ||
+    !preset.deployment || !preset.variants?.includes(variantKey)) return null;
+  const configured = effectivePreset(preset, pointKey);
+  return recipe._poolProfiles?.[configured.select?.kv_offload] ? configured : null;
+}
 const ROLES = ["prefill", "decode"];
 
 const presetApplies = (p, hwId, strategyName, variantKey) =>
@@ -370,7 +381,8 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
     const where = `presets.${key}`;
     if (key === BASELINE) errors.push(`${where}: "${BASELINE}" is reserved`);
     if (!taxonomy?.hardware_profiles?.[p.hardware]) errors.push(`${where}.hardware: unknown hardware profile "${p.hardware}"`);
-    if (p.strategy && !strategyIds.includes(p.strategy)) {
+    const fixedPd = qualifiedPoolPreset(recipe, key, p.hardware, p.variants?.[0]);
+    if (p.strategy && !strategyIds.includes(p.strategy) && !fixedPd) {
       errors.push(`${where}.strategy: "${p.strategy}" is not offered by this recipe`);
     }
     for (const v of p.variants || []) {
@@ -416,9 +428,15 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
         if (!feat) errors.push(`${at}.features: no feature "${f}"`);
         else if (typeof v === "string" && !feat.modes?.[v]) errors.push(`${at}.features.${f}: no mode "${v}"`);
       }
-      if (s.kv_offload !== undefined && s.kv_offload !== false && s.kv_offload !== "off"
-          && !taxonomy?.kv_offload?.[s.kv_offload] && !kvStoreIds.includes(s.kv_offload)) {
-        errors.push(`${at}.kv_offload: unknown option "${s.kv_offload}"`);
+      if (s.kv_offload !== undefined && s.kv_offload !== false && s.kv_offload !== "off") {
+        const profile = recipe._poolProfiles?.[s.kv_offload];
+        if (profile) {
+          if (!isPd || !p.deployment) errors.push(`${at}.kv_offload: a pool profile requires deployment on a pd_cluster preset`);
+          if (!p.variants?.length) errors.push(`${where}.variants: declare the model variants covered by this pool profile`);
+          if (p.default) errors.push(`${where}: a pool profile requires an explicitly selected preset`);
+        } else if (!taxonomy?.kv_offload?.[s.kv_offload] && !kvStoreIds.includes(s.kv_offload)) {
+          errors.push(`${at}.kv_offload: unknown option "${s.kv_offload}"`);
+        }
       }
     };
     const gpus = taxonomy?.hardware_profiles?.[p.hardware]?.gpu_count;
@@ -439,6 +457,17 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
     checkDelta(p, where);
     checkTopology(p, where);
     checkSelect(p.select, `${where}.select`);
+    if (p.deployment) {
+      if (!presetImage(p.image)?.vllm?.trim()) errors.push(`${where}.image: a pool deployment requires a vLLM container image`);
+      if (Object.keys(p.points || {}).length) errors.push(`${where}.points: a fixed pool deployment uses one configuration per preset`);
+      const selections = new Set([p.select?.kv_offload, ...presetPoints(p).map((pt) => pt.select?.kv_offload)]);
+      const poolIds = [...selections].filter((id) => recipe._poolProfiles?.[id]);
+      if (!poolIds.length) errors.push(`${where}.deployment: requires a source-qualified pool profile in select.kv_offload`);
+      for (const id of poolIds) {
+        const problems = validatePoolDeployment(recipe._poolProfiles[id], p.deployment, taxonomy?.hardware_profiles?.[p.hardware]);
+        for (const problem of problems) errors.push(`${where}.deployment (${id}): ${problem}`);
+      }
+    }
     for (const [role, d] of Object.entries(p.roles || {})) {
       checkDelta(d, `${where}.roles.${role}`);
       if (d?.pcp > 1 && role !== "prefill") errors.push(`${where}.roles.${role}.pcp: only the prefill pool sets pcp`);

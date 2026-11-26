@@ -8,6 +8,8 @@
 #   path   — directory inside the repo holding models/ (and overlays/)
 #   local  — read this local directory instead of fetching (path already applied)
 #   role   — core | owner | overlay
+#   extra_artifacts — permits a source to publish named resources alongside
+#                     its models and overlays (currently: pool_profiles).
 #              core/owner: ship full recipes under models/<org>/<repo>.yaml;
 #                          one hf_id may come from only one source
 #              overlay:    ship overlays/<org>/<repo>.yaml fragments merged
@@ -51,6 +53,7 @@ channels:
       ref: main
       path: recipes
       role: overlay
+      extra_artifacts: [pool_profiles]
       scope: { brands: [Huawei] }
     vllm-metal:
       repo: vllm-project/vllm-metal

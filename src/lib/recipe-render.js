@@ -3,9 +3,10 @@
 // on-demand `/<hf_id>.md` / `.json?<query>` routes, so a rendering means the
 // same thing wherever it is read.
 
-import { BASELINE, effectivePreset, presetPoints, presetSelect, resolvePresetKey, withPreset } from "./recipe-presets.js";
+import { BASELINE, effectivePreset, presetPoints, presetSelect, qualifiedPoolPreset, resolvePresetKey, withPreset } from "./recipe-presets.js";
 import { ADVANCED_OPTIONS } from "./advanced-options.js";
 import { SELECTION_PARAMS } from "./selection-params.js";
+import { applyPoolDeployment, resolvePoolDeployment } from "./pool-deployment.js";
 
 export { SELECTION_PARAMS };
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "./omni-tasks.js";
@@ -338,6 +339,10 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
     };
   }
   if (result.deployType === "pd_cluster") {
+    if (applied.kvOffload && recipe._poolProfiles?.[applied.kvOffload] && recipe.presets?.[presetKey]?.deployment) {
+      const plan = resolvePoolDeployment({ recipe, presetKey, mode: opts.poolMode, inputs: opts.poolInputs });
+      return applyPoolDeployment({ ...base, preset: presetKey }, plan);
+    }
     const docker = result.kvConnector?.docker;
     const renderNode = (role, node) => {
       const { command, argv, env } = node;
@@ -627,7 +632,7 @@ const parseIntParam = (v) => {
 // Returns { omni, selection, rendering, hwProfile, options } — `rendering` is
 // the JSON API shape (renderCommand), or { command, env } for omni recipes;
 // null when the selection can't be rendered.
-export function resolveSelection(recipe, query, strategies, taxonomy) {
+export function resolveSelection(recipe, query, strategies, taxonomy, { poolInputs } = {}) {
   const get = (k) => query.get(k);
   const linked = new Set(SELECTION_PARAMS.filter((k) => get(k) != null));
   const profiles = taxonomy.hardware_profiles || {};
@@ -651,6 +656,11 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   }
 
   const declaredHw = recipe.meta?.hardware || {};
+  const validTarget = (!linked.has("hardware") || get("hardware") === hwId)
+    && (!linked.has("variant") || get("variant") === variantKey);
+  const requestedPool = validTarget && qualifiedPoolPreset(recipe, get("preset"), hwId, variantKey);
+  const scopedPd = requestedPool && (!get("strategy") || get("strategy") === "pd_cluster")
+    && (!linked.has("kv_offload") || get("kv_offload") === requestedPool.select.kv_offload);
   const options = {
     hardware: listCompatibleHardware(profiles, variant, recipe).filter((id) => !profiles[id]?.restricted || id in declaredHw),
     variants: Object.keys(recipe.variants || {}),
@@ -658,6 +668,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     features: Object.keys(recipe.features || {}).filter((f) => isFeatureAllowedForVariant(variant, f)),
     presets: Object.entries(recipe.presets || {}).filter(([, p]) => p.hardware === hwId).map(([k]) => k),
   };
+  if (scopedPd && !options.strategies.includes("pd_cluster")) options.strategies.push("pd_cluster");
 
   const featureModeKeys = options.features.filter((k) => recipe.features[k]?.modes);
   const modes = {};
@@ -701,6 +712,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   // Serving strategy: the linked one when this node count can run it here,
   // else the recommendation (same fallback as the Strategy row).
   const offered = options.strategies.filter((s) => {
+    if (scopedPd && s === "pd_cluster") return true;
     const d = strategies[s]?.deploy_type;
     if (!d || d === "kv_store_lb") return false;
     if (nodeCount === 1 && d === "multi_node") return false;
@@ -709,7 +721,7 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       && isStrategySupportedOnHardware(recipe, s, hwProfile, hwId);
   });
   const recommended = recommendStrategy(recipe, hwProfile, nodeCount);
-  const reqStrategy = get("strategy");
+  const reqStrategy = get("strategy") || (scopedPd ? "pd_cluster" : null);
   const strategy = offered.includes(reqStrategy) ? reqStrategy
     : offered.includes(recommended) ? recommended
     : (offered[0] || recommended);
@@ -729,11 +741,48 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   // An option is resolved for this hardware first and gated as synthesis gates
   // it, so the selection never claims an option the command leaves out.
   const kvReq = get("kv_offload") || "";
+  let presetPick = !validTarget && recipe.presets?.[get("preset")]?.deployment ? BASELINE : get("preset") || undefined;
+  const pointPick = get("point") || undefined;
+  const requestedPreset = resolvePresetKey(recipe, hwId, strategy, presetPick, variantKey);
+  const poolId = recipe.presets?.[requestedPreset]?.deployment
+    ? presetSelect(recipe, requestedPreset, pointPick)?.kv_offload : null;
+  // A pooled preset is an entire physical layout. Opting out restores the
+  // baseline's roles, image and transfer settings as well as its KV option.
+  if (poolId && linked.has("kv_offload") && kvReq !== poolId) presetPick = BASELINE;
+  if (poolId && presetPick !== BASELINE) {
+    // The launch plan records a qualified physical layout. A copied URL may
+    // also contain stale knobs from the ordinary, editable command builder.
+    const fixed = ["nodes", "features", "advanced", "frontend", "fmode", "dcp", "point",
+      "prefill_nodes", "decode_nodes", "prefill_mode", "decode_mode", "prefill_rank", "decode_rank",
+      "pd_router", "pd_connector", "pd_transport", "kv_instances", "kv_instance"];
+    const overrides = fixed.filter((param) => linked.has(param));
+    if (overrides.length) {
+      const clean = new URLSearchParams(query);
+      for (const param of overrides) clean.delete(param);
+      const resolved = resolveSelection(recipe, clean, strategies, taxonomy, { poolInputs });
+      const { selection, rendering } = resolved;
+      const used = {
+        ...selection, features: selection.features.join(",") || "none", advanced: "none",
+        pd_connector: rendering?.pd_connector, pd_transport: "http",
+        prefill_nodes: rendering?.prefill?.nodes, decode_nodes: rendering?.decode?.nodes,
+        prefill_mode: rendering?.prefill?.parallelism, decode_mode: rendering?.decode?.parallelism,
+        prefill_rank: 0, decode_rank: 0,
+      };
+      for (const param of overrides) {
+        const actual = used[param] ?? "preset default";
+        if (String(actual) !== get(param)) selection.adjusted.push({ param, requested: get(param), used: actual,
+          reason: "fixed by the selected pool deployment" });
+      }
+      return resolved;
+    }
+  }
   const kvOpt = resolveKvOffloadOption(taxonomy.kv_offload?.[kvReq], hwProfile, hwId);
   const kvAllowedByStrategy = strategyAllowsKvOffload(strategies[strategy]);
   let kvOffload = "";
   if (hwProfile.generation !== "xpu" && kvReq) {
-    if (kvOpt) {
+    if (kvReq === poolId && recipe._poolProfiles?.[poolId]) {
+      kvOffload = poolId;
+    } else if (kvOpt) {
       if (isKvOffloadAllowedForStrategy(kvOpt, strategy, strategies[strategy])
         && isKvOffloadSupportedForRecipe(kvOpt, kvReq, recipe)
         && isKvOffloadBrandSupported(kvOpt, hwProfile, hwId)
@@ -744,9 +793,6 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     }
   }
   const kvInstances = parseIntParam(get("kv_instances"));
-
-  const presetPick = get("preset") || undefined;
-  const pointPick = get("point") || undefined;
 
   // PD pools: per-role nodes and parallelism, defaults read off the recipe
   // with the pd_cluster preset in effect mounted.
@@ -787,6 +833,11 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     if (requested != null && requested !== "" && String(requested) !== String(used)) adjusted.push({ param, requested, used, reason });
   };
   note("variant", get("variant"), variantKey, "not a variant of this recipe, or doesn't fit this hardware");
+  if (poolId && presetPick === BASELINE) {
+    note("preset", requestedPreset, BASELINE, "the selected KV offload leaves the pool deployment");
+  } else if (recipe.presets?.[get("preset")]?.deployment && !scopedPd) {
+    note("preset", get("preset"), requestedPreset, "unavailable on the selected hardware, variant, strategy or KV offload");
+  }
   const runsOnReqHw = reqProfile && Object.keys(recipe.variants || {}).find((k) =>
     isPrecisionCompatible(reqProfile, recipe.variants[k]) && isVariantHardwareSupported(recipe.variants[k], reqHw, reqProfile));
   note("hardware", reqHw, hwId, !reqProfile ? "an unknown hardware id"
@@ -817,12 +868,18 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
       pdConnector: pcpDeployment?.connector ?? pdConnector,
       linked,
       out: applied,
+      poolMode: get("pool_mode"),
+      poolInputs,
     },
   );
   note("kv_offload", kvReq || applied.unavailableKvOffload, applied.kvOffload || "off", pcpDeployment
     ? "not yet validated with native PCP and NIXL"
     : "not available for this hardware and strategy");
   note("frontend", get("frontend"), applied.frontend ?? frontend, "not supported by this recipe or variant");
+  if (get("pool_mode")) {
+    note("pool_mode", get("pool_mode"), rendering?.pool_deployment?.mode || "unselected",
+      rendering?.pool_deployment ? "choose new or reuse" : "requires an active pool deployment");
+  }
   if (pcpDeployment) {
     note("pd_router", get("pd_router"), applied.pdRouter, "incompatible with the selected PCP deployment");
     note("pd_connector", get("pd_connector"), applied.pdConnector, "incompatible with the selected PCP deployment");
@@ -831,13 +888,18 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
     if (get("pd_connector") === "mooncake_ascend") note("pd_connector", "mooncake_ascend", applied.pdConnector, "requires an active Ascend PD preset and compatible router");
   }
   note("features", get("features"), (applied.features ?? features).join(",") || "none", "not fully supported by this recipe or variant");
+  const fixedPools = rendering?.pool_deployment && Object.fromEntries(["prefill", "decode"].map((role) => {
+    const lane = rendering[role];
+    return [role, { nodes: lane.nodes, rank: lane.currentNode, parallelism: lane.parallelism }];
+  }));
   return {
     omni: false,
     selection: {
       // As rendered: a preset's `select` may have changed what the URL asked.
-      hardware: hwId, variant: variantKey, strategy, nodes: applied.nodeCount ?? nodeCount,
+      hardware: hwId, variant: variantKey, strategy, nodes: fixedPools ? rendering.node_count : applied.nodeCount ?? nodeCount,
       features: applied.features ?? features, modes: applied.modes ?? modes, advanced,
-      frontend: applied.frontend ?? frontend, kv_offload: applied.kvOffload || null, pd: pdNodes,
+      frontend: applied.frontend ?? frontend, kv_offload: applied.kvOffload || null, pd: fixedPools || pdNodes,
+      ...(rendering?.pool_deployment && { pool_mode: rendering.pool_deployment.mode }),
       pd_router: strategy === "pd_cluster" ? applied.pdRouter ?? pdRouter : undefined,
       preset: rendering?.preset ?? null, point: rendering?.preset_point ?? null,
       adjusted,

@@ -53,6 +53,7 @@ The same ones the page URL uses. Values the recipe can't run fall back to its de
 | \`features\` | Comma-separated feature keys to turn on (\`tool_calling,reasoning\`, …). Use \`features=none\` to turn them all off. Omit it to use the recipe defaults. |
 | \`preset\`, \`point\` | A tuned preset and its operating point; \`preset=baseline\` drops a default preset |
 | \`kv_offload\` | A KV offload option (\`simple\`, \`lmcache\`, … — \`kv_offload\` in the [taxonomy](${siteUrl}/taxonomy.json)) or a Mooncake topology (\`kv_store_distributed_mooncake\`, \`kv_store_centralized_mooncake\`) |
+| \`pool_mode\` | For a preset with a source-owned KV pool (e.g. \`kv_offload=vllm-ascend/memcache\`), choose \`new\` or \`reuse\`. Omit the mode to export a template for both. Enter host addresses, paths and devices under KV Offload in the command builder. |
 | \`prefill_nodes\`, \`decode_nodes\`, \`prefill_mode\`, \`decode_mode\`, \`pd_router\`, \`pd_connector\` | Prefill/decode disaggregation (\`strategy=pd_cluster\`) |
 | \`prefill_rank\`, \`decode_rank\` | Zero-based node index within the corresponding PD pool; selects the singular role command |
 
