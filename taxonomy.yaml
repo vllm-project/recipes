@@ -28,6 +28,20 @@ hardware_profiles:
     vram_gb: 1128
     multi_node: false
 
+  # ── NVIDIA Ampere (data center) ──
+  # Exact 4-GPU node profile. Kept restricted so it only appears for recipes
+  # with an end-to-end validated deployment on it.
+  a100_4x:
+    brand: NVIDIA
+    generation: ampere
+    compute_arch: sm80
+    display_name: "A100 ×4"
+    description: "NVIDIA A100 SXM4 80 GB · 4-GPU node · NVLink within the node"
+    gpu_count: 4
+    vram_gb: 320
+    multi_node: false
+    restricted: true
+
   # ── NVIDIA Blackwell ──
   # Specs follow semianalysis InferenceX GPU table (inferencex.semianalysis.com/gpu-specs).
   b200:
