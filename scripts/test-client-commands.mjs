@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { resolveClientCommands } from "../src/lib/client-commands.js";
+import { resolveCommand, resolveOmniCommand } from "../src/lib/command-synthesis.js";
+import { resolveOmniTasks } from "../src/lib/omni-tasks.js";
 
 const client = { host: "serve.example", port: "8123" };
 
@@ -78,4 +80,56 @@ test("generation recipes keep the chat example and generation benchmark", () => 
   });
   assert.match(benchCmd, /--dataset-name random /);
   assert.match(benchCmd, /--random-output-len 1024/);
+  assert.doesNotMatch(benchCmd, /--served-model-name/);
+});
+
+test("generated requests follow the selected hardware's first served name", () => {
+  const modelId = "org/checkpoint";
+  const recipe = {
+    model: { model_id: modelId, base_args: ["--served-model-name", "base"] },
+    variants: { default: { hardware_overrides: {
+      h200: { extra_args: ["--served-model-name", "primary", "secondary"] },
+    } } },
+  };
+  for (const [hw, alias] of [["h100", "base"], ["h200", "primary"]]) {
+    const { argv } = resolveCommand(recipe, "default", "single_node_tp", hw, [],
+      { single_node_tp: {} }, { hardware_profiles: { h100: {}, h200: {} } });
+    const { verifyCmd, benchCmd } = resolveClientCommands({ ...client, modelId, argv });
+    assert.equal(requestBody(verifyCmd).model, alias);
+    assert.ok(benchCmd.includes(`--served-model-name ${alias} `));
+    assert.match(benchCmd, /--model org\/checkpoint /);
+  }
+});
+
+test("pooling keeps its checkpoint-specific endpoint when the alias is opaque", () => {
+  for (const [modelId, endpoint] of [["org/text-embeddings", "embeddings"], ["org/text-reranker", "rerank"]]) {
+    const { verifyCmd, benchCmd } = resolveClientCommands({
+      ...client, modelId, tasks: ["embedding"], argv: ["--served-model-name", "old", "--served-model-name=live"],
+    });
+    assert.ok(verifyCmd.includes(`/v1/${endpoint} `));
+    assert.equal(requestBody(verifyCmd).model, "live");
+    assert.ok(benchCmd.includes(`--model ${modelId} `));
+    assert.match(benchCmd, /--served-model-name live /);
+  }
+});
+
+test("a PD prefill alias is used when the decode command omits it", () => {
+  const { verifyCmd, benchCmd } = resolveClientCommands({
+    ...client, modelId: "org/checkpoint", argv: ["--port", "8002"], prefillArgv: ["--served-model-name", "live"],
+  });
+  assert.equal(requestBody(verifyCmd).model, "live");
+  assert.match(benchCmd, /--served-model-name live /);
+});
+
+test("Omni examples follow the active task checkpoint and served name", () => {
+  const recipe = { model: { model_id: "org/base" }, omni: { tasks: [{ id: "i2i", model_id: "org/image" }] } };
+  const [task] = resolveOmniTasks(recipe);
+  for (const alias of [null, "image-api"]) {
+    const omniTask = { ...task, extraArgs: alias ? ["--served-model-name", alias] : [] };
+    const { modelId, argv } = resolveOmniCommand(recipe, "default", omniTask, {});
+    const { verifyCmd, benchCmd } = resolveClientCommands({ ...client, modelId, argv, omniTask });
+    assert.equal(requestBody(verifyCmd).model, alias || "org/image");
+    assert.match(benchCmd, /--model org\/image /);
+    assert.equal(benchCmd.includes("--served-model-name image-api"), !!alias);
+  }
 });

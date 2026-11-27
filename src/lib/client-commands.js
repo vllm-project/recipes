@@ -1,3 +1,6 @@
+import { shellQuote } from "./command-synthesis.js";
+import { substitute } from "./cluster-endpoints.js";
+
 const POOLING_EXAMPLES = {
   embed: {
     endpoint: "/v1/embeddings",
@@ -54,7 +57,14 @@ function poolingExample(argv, modelId, conversion) {
   return null;
 }
 
-export function resolveClientCommands({ argv = [], tasks = [], modelId, host, port }) {
+export function resolveClientCommands({ argv = [], prefillArgv = [], tasks = [], modelId, host, port, endpoints, omniTask }) {
+  const alias = optionValue(argv, "--served-model-name") ?? optionValue(prefillArgv, "--served-model-name");
+  const requestModel = substitute(alias || modelId, endpoints);
+  // The benchmark loads its tokenizer from the checkpoint and sends the alias in API requests.
+  const modelArgs = [`--model ${shellQuote(substitute(modelId, endpoints))}`];
+  if (alias) modelArgs.push(`--served-model-name ${shellQuote(requestModel)}`);
+  const benchModelArgs = modelArgs.join(" \\\n  ");
+
   const runner = optionValue(argv, "--runner");
   const conversion = optionValue(argv, "--convert");
   const pooling = runner !== "generate" && (
@@ -62,18 +72,18 @@ export function resolveClientCommands({ argv = [], tasks = [], modelId, host, po
     || ["embed", "classify", "reward"].includes(conversion)
   );
 
-  if (pooling) {
+  if (pooling && !omniTask) {
     const example = poolingExample(argv, modelId, conversion);
     if (!example) return { verifyCmd: null, benchCmd: null };
 
     const { endpoint, body, backend, dataset } = example;
-    const payload = JSON.stringify({ model: modelId, ...body }, null, 2).replaceAll("'", "'\\''");
+    const payload = JSON.stringify({ model: requestModel, ...body }, null, 2).replaceAll("'", "'\\''");
     return {
       verifyCmd: `curl http://${host}:${port}${endpoint} \\
   -H "Content-Type: application/json" \\
   -d '${payload}'`,
       benchCmd: `vllm bench serve \\
-  --model ${modelId} \\
+  ${benchModelArgs} \\
   --host ${host} \\
   --port ${port} \\
   --backend ${backend} \\
@@ -86,15 +96,15 @@ export function resolveClientCommands({ argv = [], tasks = [], modelId, host, po
   }
 
   return {
-    verifyCmd: `curl http://${host}:${port}/v1/chat/completions \\
+    verifyCmd: omniTask?.example?.({ host, port, modelId: requestModel }) ?? `curl http://${host}:${port}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "${modelId}",
+    "model": ${JSON.stringify(requestModel).replaceAll("'", "'\\''")},
     "messages": [{"role": "user", "content": "Hello"}],
     "max_tokens": 32
   }'`,
-    benchCmd: `vllm bench serve \\
-  --model ${modelId} \\
+    benchCmd: omniTask?.benchmark || `vllm bench serve \\
+  ${benchModelArgs} \\
   --host ${host} \\
   --port ${port} \\
   --dataset-name random \\

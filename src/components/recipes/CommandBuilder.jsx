@@ -1972,14 +1972,6 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const clientHost = endpoints[clientHostKey] || "localhost";
   const clientPortStr = endpoints[clientPortKey] || clientPort;
 
-  const { verifyCmd, benchCmd } = resolveClientCommands({
-    argv: result.argv ?? result.headArgv ?? result.decode?.argv ?? result.vllm?.argv,
-    tasks: recipe.meta?.tasks,
-    modelId,
-    host: clientHost,
-    port: clientPortStr,
-  });
-
   // Apply cluster-endpoint substitution to all rendered command/env strings.
   // Detection runs on the *un*substituted commands so the panel can list
   // every placeholder still pending a value.
@@ -2341,19 +2333,14 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     const omniSubbedCommand = substitute(omniRendered.command, effectiveEndpoints);
     const omniSubbedEnv = substituteEnv(omniRendered.env, effectiveEndpoints);
 
-    // Per-task verify command. `activeTask.example` knows the right endpoint
-    // (e.g. /v1/images/generations vs /v1/chat/completions multimodal) and
-    // payload shape; no chance for the generic /v1/chat/completions curl to
-    // mislead the user into hitting the wrong route.
-    const omniCurl = activeTask?.example
-      ? activeTask.example({
-          host: clientHost,
-          port: clientPortStr,
-          modelId: omniRendered.modelId,
-          prompt: undefined,
-        })
-      : verifyCmd;
-    const omniBench = activeTask?.benchmark || benchCmd;
+    const { verifyCmd: omniCurl, benchCmd: omniBench } = resolveClientCommands({
+      argv: omniRendered.argv,
+      modelId: omniRendered.modelId,
+      host: clientHost,
+      port: clientPortStr,
+      endpoints: effectiveEndpoints,
+      omniTask: activeTask,
+    });
 
     // Recompute placeholders against the omni command set rather than the
     // (unused-here) `result` from resolveCommand.
@@ -2567,6 +2554,16 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       </TooltipProvider>
     );
   }
+
+  const { verifyCmd, benchCmd } = resolveClientCommands({
+    argv: result.argv ?? result.headArgv ?? result.decode?.argv ?? result.vllm?.argv,
+    prefillArgv: result.prefill?.argv,
+    endpoints: effectiveEndpoints,
+    tasks: recipe.meta?.tasks,
+    modelId,
+    host: clientHost,
+    port: clientPortStr,
+  });
 
   return (
     <TooltipProvider>

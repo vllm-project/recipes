@@ -30,7 +30,7 @@ function jsonCurl({ host, port, endpoint, body }) {
     .join("\n");
   return `curl -X POST http://${host}:${port}${endpoint} \\
   -H "Content-Type: application/json" \\
-  -d '${indented}'`;
+  -d '${indented.replaceAll("'", "'\\''")}'`;
 }
 
 function formCurl({ host, port, endpoint, fields, outFile }) {
