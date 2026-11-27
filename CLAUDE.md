@@ -33,6 +33,7 @@ pnpm test:pd-connectors                 # PD KV transfer connectors: config/env/
 pnpm test:pcp                           # Native vLLM PCP layouts, NIXL PD, DCP choices and exported commands
 pnpm test:ppu-platform                  # Zhenwu PPU profiles: restricted, no generic pip wheel, no NVIDIA container fallback, pinned image's runtime flags
 pnpm test:render                        # Page-query renderer (`.md` / `.json?…`) matches every static JSON rendering + preset point (run after build-recipes-api)
+pnpm test:api                           # Every published JSON file is self-consistent: variant runs there, serves its declared checkpoint, TP fits (run after build-recipes-api)
 node scripts/fetch-provider-logos.mjs   # Re-download HF org avatars to public/providers/
 node scripts/fetch-hf-dates.mjs         # Refresh public/hf-dates.json (HF createdAt per model)
 bash scripts/hf-info.sh <org>/<repo>    # Pull config.json / params.json for a model (used when authoring recipes)
