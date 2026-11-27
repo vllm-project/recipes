@@ -19,7 +19,7 @@ import { renderCommand, resolveSelection, synthesizeInstall } from "../src/lib/r
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { validateContextEntries } from "../src/lib/recipe-context.js";
 import { presetSelect, resolvePresetKey } from "../src/lib/recipe-presets.js";
-import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, resolveOmniCommand, restoreVariantDefaults, versionBelow } from "../src/lib/command-synthesis.js";
+import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, pickLinkedVariant, isFrontendSupported, resolveFrontend, resolveOmniCommand, restoreVariantDefaults, variantRunsOnHardware, versionBelow } from "../src/lib/command-synthesis.js";
 import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
@@ -446,18 +446,21 @@ test("the builder's multi-node start matches resolveSelection, so a shared link 
       if (Object.values(recipe.presets || {}).some((p) => p.hardware === hwId)) continue;
       if (hw.restricted && !recipe.meta?.hardware?.[hwId]) continue;
       if (recipe.meta?.hardware?.[hwId] === "unsupported" || !isHardwareScalable(hw)) continue;
-      for (const [variantKey, variant] of Object.entries(recipe.variants || {})) {
-        if (variantKey !== "default" || !needsMultiNode(recipe, strategies, hw, variant, hwId)) continue;
-        for (const requested of [null, ...offered.filter((s) => strategies[s]?.deploy_type === "multi_node")]) {
-          if (requested && !isStrategySupportedOnHardware(recipe, requested, hw, hwId)) continue;
-          const q = new URLSearchParams({ hardware: hwId, ...(requested ? { strategy: requested } : {}) });
-          const { selection } = resolveSelection(recipe, q, strategies, taxonomy);
-          if (selection.hardware !== hwId) continue;
-          checked++;
-          const start = multiNodeFloor(recipe, strategies, hw, hwId, requested);
-          if (selection.strategy !== "pd_cluster" && selection.nodes !== start) {
-            mismatches.push(`/${recipe.hf_id}?${q}: builder ${start}, resolveSelection ${selection.nodes}`);
-          }
+      // The builder initializes its variant from the hardware-only link before
+      // deciding whether it needs multiple nodes. Do not size the default
+      // checkpoint when the link selects a different, hardware-specific one.
+      const variantKey = pickLinkedVariant(recipe, null, hwId, taxonomy.hardware_profiles);
+      const variant = recipe.variants?.[variantKey];
+      if (!variant || !needsMultiNode(recipe, strategies, hw, variant, hwId)) continue;
+      for (const requested of [null, ...offered.filter((s) => strategies[s]?.deploy_type === "multi_node")]) {
+        if (requested && !isStrategySupportedOnHardware(recipe, requested, hw, hwId)) continue;
+        const q = new URLSearchParams({ hardware: hwId, ...(requested ? { strategy: requested } : {}) });
+        const { selection } = resolveSelection(recipe, q, strategies, taxonomy);
+        if (selection.hardware !== hwId) continue;
+        checked++;
+        const start = multiNodeFloor(recipe, strategies, hw, hwId, requested);
+        if (selection.variant !== variantKey || (selection.strategy !== "pd_cluster" && selection.nodes !== start)) {
+          mismatches.push(`/${recipe.hf_id}?${q}: builder ${variantKey}/${start}, resolveSelection ${selection.variant}/${selection.nodes}`);
         }
       }
     }
@@ -626,3 +629,35 @@ test("KV offload follows profile opt-in without depending on the backend name", 
   allowed.kv_offload.simple.brands = ["Example"];
   assert.equal(render(allowed).argv.includes("--kv-transfer-config"), true);
 });
+
+test("a published preset serves exactly the variant that runs on its hardware", () => {
+  const wrong = [];
+  let checked = 0;
+  for (const recipe of getAllRecipes()) {
+    for (const [key] of Object.entries(recipe.presets || {})) {
+      const rel = `${recipe.hf_id}/presets/${key}.json`;
+      // A preset is skipped for several reasons upstream (no variant runs on
+      // its hardware, every point was unreachable), so absence is not an error
+      // — but only what IS published is held to the rule below.
+      if (!fs.existsSync(path.join(PUBLIC, rel))) continue;
+      const published = readJson(rel);
+      const profile = taxonomy.hardware_profiles?.[published.hardware];
+      const variant = recipe.variants?.[published.variant];
+      if (!profile) continue;
+      checked++;
+      // Independent of how the build picked the variant: whatever it published
+      // must run on the hardware the file names. Serving a checkpoint the
+      // recipe's own `supported_hardware` / precision rule excludes points
+      // readers at a command that cannot start. The shared predicate is the one
+      // the builder and the build's variant fallback use, so this stays correct
+      // when the rule gains a term — it already carries `arch:` selectors in
+      // `supported_hardware`, `requires_variant_opt_in` and single-node fit,
+      // none of which a hand-written `includes()` sees.
+      const runs = variant && variantRunsOnHardware(profile, variant, published.hardware);
+      if (!runs) wrong.push(`/${rel} serves ${published.variant} on ${published.hardware}, where the recipe does not run it`);
+    }
+  }
+  assert.ok(checked > 0, "no published presets checked");
+  assert.deepEqual(wrong, [], wrong.join("\n  "));
+});
+

@@ -37,7 +37,7 @@ import {
   isHardwareScalable,
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
-  pickFittingVariant,
+  presetVariantKey,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleParallelism,
@@ -336,6 +336,69 @@ function validateHardwareKeys(recipe, sourceFile, taxonomy, strategies) {
   }
 }
 
+// Validate the reference fields that name another object — a feature, a
+// variant, a platform, a strategy. Each one is a plain lookup that misses
+// silently, and each miss changes the rendered page with nothing to notice:
+//
+//   meta.platforms                → no Deploy option at all: resolveRecipePlatforms
+//                                   drops an entry the catalog has no id for
+//   opt_in_features               → the feature stays ON, the opposite of what
+//                                   the author asked
+//   hardware_opt_in_features.<hw> → same, for one GPU
+//   meta.default_variant.<hw>     → pickFittingVariant ignores the pick and
+//                                   substitutes the largest-footprint fit
+//   default_strategy              → recommendStrategy ignores it and opens on
+//                                   the TP-first heuristic
+//
+// None of these are schema errors (the value is a well-formed string) and none
+// reach a renderer as an error, so the build has to say so.
+function validateReferences(recipe, sourceFile, taxonomy, platformIds) {
+  const errors = [];
+  const features = new Set(Object.keys(recipe?.features || {}));
+  const variants = new Set(Object.keys(recipe?.variants || {}));
+  const offered = new Set(effectiveCompatibleStrategies(recipe));
+
+  for (const entry of recipe?.meta?.platforms || []) {
+    const id = typeof entry === "string" ? entry : entry?.id;
+    if (!platformIds.has(id)) {
+      errors.push(`meta.platforms: unknown platform "${id}" (known: ${[...platformIds].join(", ")})`);
+    }
+  }
+
+  for (const f of recipe?.opt_in_features || []) {
+    if (!features.has(f)) errors.push(`opt_in_features: no feature "${f}" (known: ${[...features].join(", ")})`);
+  }
+
+  // Keys are an exact GPU id, already enforced by the schema; the feature names
+  // inside them are not.
+  for (const [hwId, list] of Object.entries(recipe?.hardware_opt_in_features || {})) {
+    for (const f of list || []) {
+      if (!features.has(f)) errors.push(`hardware_opt_in_features.${hwId}: no feature "${f}" (known: ${[...features].join(", ")})`);
+    }
+  }
+
+  // `meta.default_variant` is a hardware-keyed map: a *value* that names no
+  // variant is silently replaced by the largest fit, which is exactly the
+  // choice the author wrote the key to override.
+  for (const [hwKey, v] of Object.entries(recipe?.meta?.default_variant || {})) {
+    if (!variants.has(v)) errors.push(`meta.default_variant.${hwKey}: no variant "${v}" (known: ${[...variants].join(", ")})`);
+  }
+
+  // `default_strategy` only takes effect on a strategy the recipe offers; on any
+  // other it is ignored and the recipe opens on the TP-first heuristic instead.
+  // A `single_node_*` pick is still honored at >1 node through its multi_node
+  // sibling, so the check is that the strategy is offered at all.
+  const ds = recipe?.default_strategy;
+  if (ds && !offered.has(ds)) {
+    errors.push(`default_strategy: "${ds}" is not offered by this recipe (offered: ${[...offered].join(", ") || "none"})`);
+  }
+
+  if (errors.length) {
+    const rel = sourceRel(sourceFile);
+    throw new Error(`Unresolvable references in ${rel}:\n  - ${errors.join("\n  - ")}`);
+  }
+}
+
 
 // Recursively find all .yaml files under a directory
 function findYamlFiles(dir) {
@@ -357,11 +420,24 @@ writeJson("taxonomy.json", taxonomy);
 
 // ── Platforms ── (third-party self-host targets; flat catalog)
 const platformsFile = path.join(CONTENT, "platforms.yaml");
+// Catalog ids, for the recipe-level `meta.platforms` check below: an entry that
+// isn't here resolves to nothing and renders no Deploy option.
+const platformIds = new Set();
 let platformsCount = 0;
 if (fs.existsSync(platformsFile)) {
   const platforms = normalizeDates(readYaml(platformsFile));
   writeJson("platforms.json", platforms);
-  platformsCount = Array.isArray(platforms?.platforms) ? platforms.platforms.length : 0;
+  // `platforms.yaml` is authored content, not schema-validated: an entry that is
+  // present but null (`- null`, an empty list item) would otherwise take the
+  // whole build down on `.id`. Such an entry names no platform, so it adds none.
+  const platformList = Array.isArray(platforms?.platforms) ? platforms.platforms : [];
+  for (const p of platformList) {
+    if (p?.id) platformIds.add(p.id);
+  }
+  // Distinct ids, not list entries: this is the number the build summary prints,
+  // and it is the count of platforms the catalog can actually name. It only
+  // differs from `platformList.length` for an entry with no id, which adds none.
+  platformsCount = platformIds.size;
 }
 
 // ── Strategies ──
@@ -553,14 +629,20 @@ function renderAndWriteVariant(recipe, variantKey, altBaseHfId, strategies, taxo
 // Every tuned preset rendered at each of its points, so agents can read the
 // exact commands of a non-default preset or point without the builder:
 //   /<hf_id>/presets/<key>.json = { preset meta, points: { <point|default>: rendering } }
-// Variant: the preset's first listed one, else `default`. Strategy: the
-// preset's, else the recommendation for that GPU.
+// Variant: the preset's first listed one, else the fitting variant for that
+// GPU (`default` when it runs there). Strategy: the preset's, else the
+// recommendation for that GPU.
 function writePresetRenderings(recipe, hfId, strategies, taxonomy) {
   const written = {};
   for (const [key, p] of Object.entries(recipe.presets || {})) {
     const hwId = p.hardware;
     const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
-    const variantKey = p.variants?.[0] || "default";
+    // A preset that names its own hardware can't publish a variant the recipe
+    // says doesn't run there: fall back exactly as the builder does when the
+    // reader opens this hardware without a `?variant=`. Sources that omit
+    // `variants:` used to get `default` unconditionally, which wrote commands
+    // serving, e.g., an NVFP4 checkpoint on an H200 the recipe excludes it from.
+    const variantKey = presetVariantKey(recipe, p, hwProfile, hwId);
     const variant = recipe.variants?.[variantKey];
     if (!variant) continue;
     const strategy = p.strategy || recommendStrategy(recipe, hwProfile, fitsSingleNode(hwProfile, variant, hwId) ? 1 : 2);
@@ -614,6 +696,7 @@ for (const file of findYamlFiles(modelsDir)) {
   validateFeatureModes(r, file);
   validateFrontends(r, file, taxonomy);
   validateHardwareKeys(r, file, taxonomy, strategies);
+  validateReferences(r, file, taxonomy, platformIds);
   const presetErrors = validatePresets(r, taxonomy, effectiveCompatibleStrategies(r), kvStoreIds, strategies.pd_cluster?.connectors);
   if (presetErrors.length) throw new Error(`Invalid presets in ${sourceRel(file)}:\n  - ${presetErrors.join("\n  - ")}`);
   const contextErrors = validateContextEntries(r);
