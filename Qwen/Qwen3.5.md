@@ -21,7 +21,7 @@ uv pip install -U vllm --torch-backend=auto
 ```
 
 #### AMD 
-> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.0, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described below. Supported GPUs: MI300X, MI325X, MI355X.
+> Note: The vLLM wheel for ROCm requires Python 3.12, ROCm 7.2.1, and glibc >= 2.35. If your environment does not meet these requirements, please use the Docker-based setup as described below. Supported GPUs: MI300X, MI325X, MI355X.
 ```bash
 uv venv --python 3.12
 source .venv/bin/activate

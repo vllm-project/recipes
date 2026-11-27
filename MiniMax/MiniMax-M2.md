@@ -75,7 +75,7 @@ docker run --gpus all \
 
 ### Installing vLLM for AMD GPU (ROCm)
 
-Install the vLLM ROCm wheel (requires Python 3.12 and ROCm 7.0+):
+Install the vLLM ROCm wheel (requires Python 3.12 and ROCm 7.2.1+):
 
 ```bash
 uv pip install vllm --extra-index-url https://wheels.vllm.ai/rocm/
