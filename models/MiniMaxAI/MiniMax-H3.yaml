@@ -764,7 +764,7 @@ variants:
           - "--enforce-eager"
         extra_env:
           VLLM_OMNI_VIDEO_SYNC_TIMEOUT: "14400"
-        
+
 
 # Omni recipes are served through `vllm serve --omni`, which has its own
 # diffusion-parallelism flags (--usp / --ring / --vae-patch-parallel-size).
@@ -1551,7 +1551,7 @@ guide: |
     --stage-init-timeout 14400 \
     --quantization int8
   ```
-  
+
   ## Text-encoder tensor parallelism
 
   By default the whole Qwen3-VL encoder is resident on the DiT main rank, making it the

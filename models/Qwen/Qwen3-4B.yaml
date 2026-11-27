@@ -98,7 +98,7 @@ guide: |
   source .venv/bin/activate
   uv pip install -U vllm --torch-backend auto
   ```
-  
+
   ### pip (Intel Xeon 6 CPUs)
   For Intel and AMD x86 CPUs, follow the [CPU pre-built wheels](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/#pre-built-wheels) installation instructions.
 

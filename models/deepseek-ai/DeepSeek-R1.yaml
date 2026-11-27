@@ -204,8 +204,8 @@ guide: |
 
   Each GPU runs its own attention replica with a private KV cache, while the MoE
   experts stay tensor-sharded across all eight GPUs. Aggregate KV-cache
-  capacity is roughly 8x that of a single TP8 replica, useful for workloads 
-  benefiting from larger KV capacities. 
+  capacity is roughly 8x that of a single TP8 replica, useful for workloads
+  benefiting from larger KV capacities.
 
   Engine (all eight ranks in one process, listening on 8100):
   ```bash

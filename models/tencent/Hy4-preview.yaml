@@ -191,7 +191,7 @@ guide: |
 
   ### Serving on 8×AMD MI355X (gfx950)
 
-  Spec decoding (native MTP, `k=3`) is opt-in. 
+  Spec decoding (native MTP, `k=3`) is opt-in.
 
   ```bash
   export VLLM_ROCM_USE_AITER=1
@@ -210,7 +210,7 @@ guide: |
 
   **Context window.** 262,144 is the default verified window. MXFP8
   (`tencent/Hy4-preview-FP8`) also comes up at the full 1,048,576 ceiling
-  at util `0.92` (1.21× concurrency for a 1M request). 
+  at util `0.92` (1.21× concurrency for a 1M request).
 
   ### Serving on 8×AMD MI325X (gfx942)
 
@@ -219,7 +219,7 @@ guide: |
   is context 139264, FP8 KV, and the AITER MoE, MHA, RMSNorm, and linear toggles.
   At GPU memory utilization 0.96 the KV cache holds 530,912 tokens,
   about 3.81× one 139,264-token request.
-  
+
   ```bash
   export VLLM_ROCM_USE_AITER=1
   export VLLM_ROCM_USE_AITER_MOE=1

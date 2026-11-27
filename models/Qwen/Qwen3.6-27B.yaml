@@ -241,7 +241,7 @@ variants:
           - "--async-scheduling"
           - "--skip-mm-profiling"
         extra_env:
-          VLLM_HAS_FLASHINFER_CUBIN: "1"  
+          VLLM_HAS_FLASHINFER_CUBIN: "1"
   redhat_fp8:
     model_id: "RedHatAI/Qwen3.6-27B-FP8"
     precision: fp8
