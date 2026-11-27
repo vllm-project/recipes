@@ -51,10 +51,10 @@ function serveSection(r) {
   const dockerNote = (cmd) => cmd ? ["", "Docker equivalent:", "", fence(cmd)] : [];
   if (r.deploy_type === "multi_node") {
     const workers = r.worker_commands || [r.worker_command];
+    const workerDockers = r.worker_docker_commands || (r.worker_docker_command ? [r.worker_docker_command] : []);
     out.push(`Run one command per node: the head (node rank 0) plus ${workers.length} worker${workers.length === 1 ? "" : "s"}. Each node's command differs — don't replay one on every node.`);
-    out.push("", "### Head (node 0)", "", fence(withEnv(r.env, r.head_command)));
-    workers.forEach((cmd, i) => out.push("", `### Node ${i + 1}`, "", fence(withEnv(r.env, cmd))));
-    out.push(...dockerNote(r.head_docker_command && `# Head\n${r.head_docker_command}`));
+    out.push("", "### Head (node 0)", "", fence(withEnv(r.env, r.head_command)), ...dockerNote(r.head_docker_command));
+    workers.forEach((cmd, i) => out.push("", `### Node ${i + 1}`, "", fence(withEnv(r.env, cmd)), ...dockerNote(workerDockers[i])));
     return out;
   }
   if (r.deploy_type === "pd_cluster") {
