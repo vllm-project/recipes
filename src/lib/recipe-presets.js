@@ -378,6 +378,11 @@ export function validatePresets(recipe, taxonomy, strategyIds, kvStoreIds = [], 
     }
     const isPd = p.strategy === "pd_cluster";
     if (p.roles && !isPd) errors.push(`${where}.roles: only a pd_cluster preset has roles`);
+    for (const field of ["head_args", "worker_args"]) {
+      if (p[field] !== undefined && !p.strategy?.startsWith("multi_node_")) {
+        errors.push(`${where}.${field}: specify a multi_node_* strategy for node-specific arguments`);
+      }
+    }
     if (p.default) {
       const slot = `${p.hardware}|${p.strategy || "*"}|${(p.variants || []).join(",") || "*"}`;
       if (seenDefault.has(slot)) errors.push(`${where}: ${seenDefault.get(slot)} is already the default for this hardware + strategy`);

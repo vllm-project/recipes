@@ -316,6 +316,8 @@ export function buildRecipeSchema({ taxonomy, strategies }) {
           label: { type: "string" },
           hardware: gpuId,
           strategy: strategyId,
+          head_args: strings,
+          worker_args: strings,
           router_port: routerPort,
           variants: { type: "array", minItems: 1, items: { type: "string" } },
           workload: { type: "string" },
