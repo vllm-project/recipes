@@ -1,3 +1,5 @@
+import { renderJsonClient } from "./recipe-clients.js";
+
 const POOLING_EXAMPLES = {
   embed: {
     endpoint: "/v1/embeddings",
@@ -54,7 +56,11 @@ function poolingExample(argv, modelId, conversion) {
   return null;
 }
 
-export function resolveClientCommands({ argv = [], tasks = [], modelId, host, port }) {
+export function resolveClientCommands({ argv = [], tasks = [], modelId, host, port, client }) {
+  if (client) {
+    const declared = renderJsonClient({ client, modelId, host, port });
+    return { verifyCmd: declared.verify_command, benchCmd: declared.benchmark_command };
+  }
   const runner = optionValue(argv, "--runner");
   const conversion = optionValue(argv, "--convert");
   const pooling = runner !== "generate" && (

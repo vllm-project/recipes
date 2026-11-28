@@ -1973,6 +1973,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const clientPortStr = endpoints[clientPortKey] || clientPort;
 
   const { verifyCmd, benchCmd } = resolveClientCommands({
+    client: recipe.client,
     argv: result.argv ?? result.headArgv ?? result.decode?.argv ?? result.vllm?.argv,
     tasks: recipe.meta?.tasks,
     modelId,

@@ -5,6 +5,7 @@ on:
     paths:
       - "src/components/recipes/CommandBuilder.jsx"
       - "src/lib/client-commands.js"
+      - "src/lib/recipe-clients.js"
       - "scripts/test-client-commands.mjs"
       - ".github/workflows/test-client-commands.yml"
   push:
@@ -12,6 +13,7 @@ on:
     paths:
       - "src/components/recipes/CommandBuilder.jsx"
       - "src/lib/client-commands.js"
+      - "src/lib/recipe-clients.js"
       - "scripts/test-client-commands.mjs"
       - ".github/workflows/test-client-commands.yml"
 
