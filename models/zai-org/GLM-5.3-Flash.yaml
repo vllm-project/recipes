@@ -4,7 +4,7 @@ meta:
   provider: "GLM (Z-AI)"
   description: "GLM-5.3-Flash is a 320B-total / 18B-active multimodal MoE with hybrid KDA and sparse MLA attention, native FP8 weights, MTP, and a 1M-token context window."
   date_added: 2026-08-27
-  date_updated: 2026-10-08
+  date_updated: 2026-10-09
   difficulty: advanced
   tasks:
     - text
@@ -14,6 +14,7 @@ meta:
     h100: verified
     b200: verified
     gb200: verified
+    mi325x: verified
     mi355x: verified
     ascend_950pr_8x: verified
 
@@ -211,10 +212,10 @@ guide: |
   a maximum context length of 1,048,576 tokens and includes one MTP draft layer.
 
   The implementation supports NVIDIA Hopper and newer GPUs, AMD Instinct
-  gfx950 via ROCm, and Huawei Ascend 950PR (8 NPUs, one node) via vLLM
-  Ascend. On NVIDIA/AMD it can scale with tensor, pipeline, expert, or
-  data+expert parallelism. The Ascend path is validated as single-node TP=8
-  only.
+  gfx942 (MI325X) and gfx950 via ROCm, and Huawei Ascend 950PR (8 NPUs, one
+  node) via vLLM Ascend. On NVIDIA/AMD it can scale with tensor, pipeline,
+  expert, or data+expert parallelism. The Ascend path is validated as
+  single-node TP=8 only.
 
   ## Prerequisites
 
