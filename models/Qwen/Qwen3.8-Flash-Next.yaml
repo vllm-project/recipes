@@ -327,6 +327,17 @@ guide: |
   --speculative-config '{"method":"mtp","num_speculative_tokens":3}'
   ```
 
+  For agentic multi-turn traffic on MI355X, capture prefill CUDA graphs up to
+  16384 tokens. Most turns add a short prefill on top of a cached prefix, and
+  these steps then replay a graph instead of launching each kernel:
+
+  ```bash
+  --compilation-config '{"max_prefill_cudagraph_capture_tokens": 16384}'
+  ```
+
+  Startup takes about 50 s longer and the graphs take about 16 GiB of memory
+  from the KV cache.
+
   ### Full native context
 
   The checkpoint advertises a native 262,144-token context, which vLLM uses when
