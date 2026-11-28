@@ -40,6 +40,8 @@ import {
   isKvStoreBrandSupported,
   strategyAllowsKvOffload,
   pickFittingVariant,
+  pickLinkedVariant,
+  variantRunsOnHardware,
   pdFitsSingleNode,
   pdRoleNodes,
   pdRoleValue,
@@ -470,18 +472,25 @@ export function renderCommand(recipe, variantKey, strategy, hwId, nodeCount, fea
 // { recommended, alternatives: { <strategy>: <rendered> } } where the caller
 // writes each alternative to its own file and replaces it with a path link.
 // Null for omni recipes or unknown variants.
-export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy) {
+export function buildVariantRendering(recipe, variantKey, hwId, strategies, taxonomy, allowVariantFallback = false) {
   let variant = recipe.variants?.[variantKey];
   if (!variant) return null;
   if ((recipe.meta?.tasks || []).includes("omni")) return null;
 
   const hwProfile = taxonomy.hardware_profiles?.[hwId] || {};
   const scalable = isHardwareScalable(hwProfile);
-  // Non-scalable hardware (single-GPU workstation, e.g. DGX Station) can't
-  // shard an oversized variant — substitute the largest variant that fits, and
-  // skip multi-node strategies. Mirrors the command builder's UI behavior.
-  if (!scalable && !fitsSingleNode(hwProfile, variant, hwId)) {
-    const fitting = pickFittingVariant(recipe, hwProfile, hwId);
+  // Parent JSON hardware links behave like page links: choose an exact
+  // hardware-specific precision even if the generic default also fits.
+  // Promoted checkpoint endpoints must retain their explicit variant.
+  if (allowVariantFallback) {
+    const linkedVariant = pickLinkedVariant(recipe, null, hwId, taxonomy.hardware_profiles);
+    if (recipe.variants?.[linkedVariant]) {
+      variantKey = linkedVariant;
+      variant = recipe.variants[linkedVariant];
+    }
+  }
+  if (!variantRunsOnHardware(hwProfile, variant, hwId)) {
+    const fitting = allowVariantFallback ? pickFittingVariant(recipe, hwProfile, hwId) : null;
     if (!fitting) return null;
     variantKey = fitting;
     variant = recipe.variants[fitting];
@@ -633,15 +642,16 @@ export function resolveSelection(recipe, query, strategies, taxonomy) {
   const linked = new Set(SELECTION_PARAMS.filter((k) => get(k) != null));
   const profiles = taxonomy.hardware_profiles || {};
 
-  let variantKey = recipe.variants?.[get("variant")] ? get("variant") : "default";
+  let variantKey = pickLinkedVariant(recipe, get("variant"), get("hardware"), profiles);
   let variant = recipe.variants?.[variantKey] || {};
-  const defaultHw = pickDefaultHardware(profiles, variant, recipe);
   const reqHw = get("hardware");
   const reqProfile = profiles[reqHw];
-  const hwAllowed = reqProfile
+  const requestedHardwareAvailable = reqProfile
     && (!reqProfile.restricted || reqHw in (recipe.meta?.hardware || {}))
+    && isHardwareSupported(recipe, reqHw);
+  const defaultHw = pickDefaultHardware(profiles, variant, recipe);
+  const hwAllowed = requestedHardwareAvailable
     && isPrecisionCompatible(reqProfile, variant)
-    && isHardwareSupported(recipe, reqHw)
     && isVariantHardwareSupported(variant, reqHw, reqProfile);
   const hwId = hwAllowed ? reqHw : defaultHw;
   const hwProfile = profiles[hwId] || {};

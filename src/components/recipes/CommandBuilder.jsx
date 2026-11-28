@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { replaceQuery } from "@/lib/url-state";
 import { Copy, Check, Terminal, Gauge, Sparkles, ChevronDown, Package, Info, Zap, Globe, Wrench, Brain, ExternalLink } from "lucide-react";
 import { HuggingFaceIcon } from "@/components/icons/PlatformLogos";
-import { maxVersion, resolveInstall, nvidiaNightlyPipInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
+import { maxVersion, resolveInstall, nvidiaNightlyPipInstall, isFeatureAllowedForVariant, restoreVariantDefaults, FEATURE_MUTEX, hardwareInstall, hwPipOverride, multiNodeFloor, resolveCommand, recommendStrategy, isPrecisionCompatible, isHardwareSupported, isVariantHardwareSupported, fitsSingleNode, isHardwareScalable, isKvStoreBrandSupported, variantRunsOnHardware, variantVramMinimumGb, pickFittingVariant, pickLinkedVariant, pickDefaultHardware, resolveSingleNodeTp, lastIntFlag, computeDockerMeta, cu129DockerImage, LAST_CU129_RELEASE, buildDockerRun, resolveOmniCommand, pdPoolModes, pdPcpDeployment, pdRoleNodes, pdRoleParallelism, defaultModeFor, isModeSupported, isModeAllowedForVariant, resolveModeKey, isFeatureAllowedForStrategy, isFeatureSupportedOnHardware, isKvOffloadAllowedForStrategy, isKvOffloadSupportedForRecipe, isKvOffloadBrandSupported, isKvOffloadInstallable, isPipInstallAvailable, kvOffloadInstallSteps, resolveKvOffloadOption, strategyAllowsKvOffload, MAX_NODES, nodesForStrategy, isStrategyReachable, isStrategySupportedOnHardware, effectiveCompatibleStrategies, needsMultiNode, multiNodeUnavailable, resolveFrontend, isFrontendSupported, isDynamoSupportedOnHardware, smgUnsupportedReason, pdConnectorUnavailableReason, ascendPdUnavailableReason } from "@/lib/command-synthesis";
 import { resolveOmniTasks, resolveOmniTaskForHardware } from "@/lib/omni-tasks";
 import { presetPoints, presetSelect, resolvePresetKey, withPreset } from "@/lib/recipe-presets";
 import { selectPdDecode } from "@/lib/pd-decode-selection";
@@ -336,7 +336,9 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const omniTasks = useMemo(() => resolveOmniTasks(recipe), [recipe]);
 
   // ── State ──
-  const [variant, setVariant] = useState(searchParams.get("variant") || "default");
+  const [variant, setVariant] = useState(() => pickLinkedVariant(
+    recipe, searchParams.get("variant"), searchParams.get("hardware"), taxonomy.hardware_profiles
+  ));
   const [frontend, setFrontend] = useState(() =>
     resolveFrontend(recipe, searchParams.get("frontend") || undefined, taxonomy)
   );
@@ -367,7 +369,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   }, [recipe, taxonomy]);
 
   const requestedHwId = searchParams.get("hardware");
-  const requestedVariant = recipe.variants?.[searchParams.get("variant") || "default"] || recipe.variants?.default || {};
+  const requestedVariant = recipe.variants?.[variant] || recipe.variants?.default || {};
   const requestedHwProfile = taxonomy.hardware_profiles?.[requestedHwId] || {};
   const requestedHwAllowed = requestedHwId
     && taxonomy.hardware_profiles?.[requestedHwId]
@@ -724,9 +726,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
   const [features, setFeatures] = useState(() => {
     const fp = searchParams.get("features");
     if (fp !== null) return fp.split(",").filter((f) => recipe.features?.[f]);
-    const urlHw = searchParams.get("hardware") || defaultHw;
-    const urlVariant = searchParams.get("variant") || "default";
-    return defaultFeaturesFor(urlHw, urlVariant);
+    return defaultFeaturesFor(hwId, variant);
   });
 
   // Features that are single-select ("pick one of N") rather than boolean —
@@ -767,7 +767,7 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
     return out;
   }, [recipe]);
   const [featureModes, setFeatureModes] = useState(() => ({
-    ...variantDefaultModes(searchParams.get("variant") || "default"),
+    ...variantDefaultModes(variant),
     ...parseFmode(searchParams.get("fmode")),
   }));
   const featureModesToUrl = useCallback(
@@ -1505,17 +1505,19 @@ export function CommandBuilder({ recipe, strategies, taxonomy, contextNotes = []
       setKvInstances(null);
       setKvInstanceIdx(0);
     }
-    // If the active variant cannot run on the new hardware (explicit allowlist,
-    // precision, or a non-scalable VRAM shortfall), fall to the largest variant
-    // that can run there.
+    // On a hardware pill click, prefer its explicit variant over a generic
+    // default when the URL has not pinned a checkpoint. Also retain the
+    // existing fallback for genuinely incompatible hardware/VRAM.
     let activeVariant = currentVariant;
-    // Folded into the single syncUrl below rather than synced here — a separate
-    // syncUrl call would read stale searchParams and get clobbered (same footgun
-    // as selectVariant). Left undefined when the variant is unchanged so the
-    // existing variant= param is preserved, not deleted.
+    // Folded into the single syncUrl below to avoid losing other query params.
     let variantUpdate;
-    if (!variantRunsOnHardware(newProfile, currentVariant, id)) {
-      const fitting = pickFittingVariant(recipe, newProfile, id);
+    const linkedVariant = !searchParams.get("variant") && variant === "default"
+      ? pickLinkedVariant(recipe, null, id, taxonomy.hardware_profiles)
+      : null;
+    const needsFallback = !variantRunsOnHardware(newProfile, currentVariant, id);
+    if (needsFallback || (linkedVariant && linkedVariant !== variant)) {
+      const fitting = linkedVariant && linkedVariant !== variant
+        ? linkedVariant : pickFittingVariant(recipe, newProfile, id);
       if (fitting && fitting !== variant) {
         setVariant(fitting);
         variantUpdate = fitting;

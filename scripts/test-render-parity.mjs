@@ -19,7 +19,7 @@ import { renderCommand, resolveSelection, synthesizeInstall } from "../src/lib/r
 import { selectionMarkdown } from "../src/lib/recipe-markdown.js";
 import { validateContextEntries } from "../src/lib/recipe-context.js";
 import { presetSelect, resolvePresetKey } from "../src/lib/recipe-presets.js";
-import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, isFrontendSupported, resolveFrontend, resolveOmniCommand, restoreVariantDefaults, variantRunsOnHardware, versionBelow } from "../src/lib/command-synthesis.js";
+import { computeDockerMeta, effectiveCompatibleStrategies, isHardwareScalable, isStrategySupportedOnHardware, multiNodeFloor, needsMultiNode, pickLinkedVariant, isFrontendSupported, resolveFrontend, resolveOmniCommand, restoreVariantDefaults, variantRunsOnHardware, versionBelow } from "../src/lib/command-synthesis.js";
 import { ascendPdPools, ascendPdRecipe } from "./fixtures/ascend-pd.mjs";
 
 const PUBLIC = process.env.RECIPES_PUBLIC_DIR ? path.resolve(process.env.RECIPES_PUBLIC_DIR) : path.join(process.cwd(), "public");
@@ -446,18 +446,21 @@ test("the builder's multi-node start matches resolveSelection, so a shared link 
       if (Object.values(recipe.presets || {}).some((p) => p.hardware === hwId)) continue;
       if (hw.restricted && !recipe.meta?.hardware?.[hwId]) continue;
       if (recipe.meta?.hardware?.[hwId] === "unsupported" || !isHardwareScalable(hw)) continue;
-      for (const [variantKey, variant] of Object.entries(recipe.variants || {})) {
-        if (variantKey !== "default" || !needsMultiNode(recipe, strategies, hw, variant, hwId)) continue;
-        for (const requested of [null, ...offered.filter((s) => strategies[s]?.deploy_type === "multi_node")]) {
-          if (requested && !isStrategySupportedOnHardware(recipe, requested, hw, hwId)) continue;
-          const q = new URLSearchParams({ hardware: hwId, ...(requested ? { strategy: requested } : {}) });
-          const { selection } = resolveSelection(recipe, q, strategies, taxonomy);
-          if (selection.hardware !== hwId) continue;
-          checked++;
-          const start = multiNodeFloor(recipe, strategies, hw, hwId, requested);
-          if (selection.strategy !== "pd_cluster" && selection.nodes !== start) {
-            mismatches.push(`/${recipe.hf_id}?${q}: builder ${start}, resolveSelection ${selection.nodes}`);
-          }
+      // The builder initializes its variant from the hardware-only link before
+      // deciding whether it needs multiple nodes. Do not size the default
+      // checkpoint when the link selects a different, hardware-specific one.
+      const variantKey = pickLinkedVariant(recipe, null, hwId, taxonomy.hardware_profiles);
+      const variant = recipe.variants?.[variantKey];
+      if (!variant || !needsMultiNode(recipe, strategies, hw, variant, hwId)) continue;
+      for (const requested of [null, ...offered.filter((s) => strategies[s]?.deploy_type === "multi_node")]) {
+        if (requested && !isStrategySupportedOnHardware(recipe, requested, hw, hwId)) continue;
+        const q = new URLSearchParams({ hardware: hwId, ...(requested ? { strategy: requested } : {}) });
+        const { selection } = resolveSelection(recipe, q, strategies, taxonomy);
+        if (selection.hardware !== hwId) continue;
+        checked++;
+        const start = multiNodeFloor(recipe, strategies, hw, hwId, requested);
+        if (selection.variant !== variantKey || (selection.strategy !== "pd_cluster" && selection.nodes !== start)) {
+          mismatches.push(`/${recipe.hf_id}?${q}: builder ${variantKey}/${start}, resolveSelection ${selection.variant}/${selection.nodes}`);
         }
       }
     }
