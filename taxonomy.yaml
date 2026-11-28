@@ -130,6 +130,21 @@ hardware_profiles:
     multi_node: false
     restricted: true
 
+  # Jetson AGX Thor — NVIDIA's edge module, 1× Blackwell GPU (SM110) with 128 GB
+  # unified memory (273 GB/s). `restricted: true` keeps it out of the picker unless
+  # a recipe explicitly lists it in `meta.hardware`.
+  jetson_agx_thor:
+    brand: NVIDIA
+    generation: blackwell
+    compute_arch: sm110
+    display_name: "Jetson AGX Thor"
+    description: "NVIDIA Jetson AGX Thor · 1× Blackwell GPU (SM110) · 128 GB unified memory"
+    gpu_count: 1
+    vram_gb: 128
+    multi_node: false
+    scalable: false
+    restricted: true
+
   # RTX Pro 6000 — single-GPU RTX Pro 6000 system.
   # `restricted: true` keeps it out of the picker unless a recipe explicitly
   # lists it in `meta.hardware` (same pattern as the TPU profiles).
