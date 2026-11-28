@@ -1664,7 +1664,7 @@ function dynamoParserArgs(args, config, warnings) {
 // single quotes so bash still expands them; any other `$` stays literal.
 const ADDRESS_PLACEHOLDER = /(\$(?:ROUTER_HOST|ROUTER_PORT|HEAD_IP|(?:PREFILL|DECODE)_NODE_\d+)(?![A-Za-z0-9_]))/;
 
-function shellQuote(s) {
+export function shellQuote(s) {
   if (typeof s !== "string" || s.length === 0) return s;
   // Bare $VAR references must stay unquoted so bash expands them at runtime.
   if (/^\$[A-Z_][A-Z0-9_]*$/.test(s)) return s;
@@ -1750,7 +1750,7 @@ export function resolveOmniCommand(recipe, variantKey, task, hwProfile, hwProfil
     ? `${serveBinary} ${modelId}`
     : `${serveBinary} ${modelId} \\\n  ${lines.join(" \\\n  ")}`;
 
-  return { command, env, modelId };
+  return { command, env, modelId, argv: [...serveBinary.split(/\s+/), modelId, ...filtered] };
 }
 
 /**
